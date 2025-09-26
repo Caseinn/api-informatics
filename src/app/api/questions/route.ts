@@ -1,10 +1,13 @@
 // app/api/v1/trivia/route.ts
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client' // ⬅️ import Prisma to narrow errors
-import type { Difficulty, QuestionType } from '@prisma/client'
+import { Prisma } from '@prisma/client' // for error narrowing only
 
 export const runtime = 'nodejs'
+
+// Local TS unions (avoid importing enums from @prisma/client)
+type QuestionType = 'multiple' | 'boolean'
+type Difficulty = 'easy' | 'medium' | 'hard'
 
 const RC = {
   SUCCESS: 0,
@@ -53,12 +56,11 @@ export async function GET(request: Request) {
       id?: { notIn: string[] }
     } = {}
 
-    if (categoryName) {
-      where.categoryName = { contains: categoryName, mode: 'insensitive' }
-    }
+    if (categoryName) where.categoryName = { contains: categoryName, mode: 'insensitive' }
     if (isValidDifficulty(difficulty)) where.difficulty = difficulty
     if (isValidType(qType)) where.type = qType
 
+    // Exclude served IDs for this token, if any
     let servedIds: string[] = []
     if (token) {
       const session = await prisma.sessionToken.findUnique({
@@ -78,7 +80,7 @@ export async function GET(request: Request) {
       select: {
         id: true,
         categoryName: true,
-        type: true,
+        type: true,            // Prisma returns strings compatible with our unions
         difficulty: true,
         question: true,
         correctAnswer: true,
@@ -88,8 +90,8 @@ export async function GET(request: Request) {
 
     const results: TriviaQuestion[] = questions.map((q) => ({
       category: q.categoryName,
-      type: q.type,
-      difficulty: q.difficulty,
+      type: q.type as QuestionType,
+      difficulty: q.difficulty as Difficulty,
       question: q.question,
       correct_answer: q.correctAnswer,
       incorrect_answers: q.type === 'boolean' ? [] : q.incorrectAnswers,
@@ -97,7 +99,6 @@ export async function GET(request: Request) {
 
     if (token && questions.length > 0) {
       const newIds = questions.map((q) => q.id)
-
       await prisma.sessionToken
         .update({
           where: { id: token },
@@ -107,7 +108,6 @@ export async function GET(request: Request) {
           },
         })
         .catch(async (e: unknown) => {
-          // ⬇️ Type-safe error narrowing (no "any")
           if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2025') {
             await prisma.sessionToken.create({
               data: {
@@ -126,8 +126,8 @@ export async function GET(request: Request) {
       response_code: results.length > 0 ? RC.SUCCESS : RC.NO_RESULTS,
       results,
     })
-  } catch (error) {
-    console.error('API error:', error)
+  } catch (err) {
+    console.error('Trivia API error:', err)
     return NextResponse.json(
       { response_code: RC.INVALID_PARAM, error: 'Invalid request' },
       { status: 400 },
