@@ -1,11 +1,11 @@
-// app/api/v1/trivia/route.ts
+// app/api/questions/route.ts
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
-import { Prisma } from '@prisma/client' // for error narrowing only
+import { Prisma } from '@prisma/client' // only for error narrowing
 
 export const runtime = 'nodejs'
 
-// Local TS unions (avoid importing enums from @prisma/client)
+// Local TS unions (don’t rely on Prisma-enum exports)
 type QuestionType = 'multiple' | 'boolean'
 type Difficulty = 'easy' | 'medium' | 'hard'
 
@@ -49,6 +49,7 @@ export async function GET(request: Request) {
     const qType = searchParams.get('type')
     const token = searchParams.get('token')
 
+    // Build where
     const where: {
       categoryName?: { contains: string; mode: 'insensitive' }
       difficulty?: Difficulty
@@ -60,7 +61,7 @@ export async function GET(request: Request) {
     if (isValidDifficulty(difficulty)) where.difficulty = difficulty
     if (isValidType(qType)) where.type = qType
 
-    // Exclude served IDs for this token, if any
+    // Exclude served for this token
     let servedIds: string[] = []
     if (token) {
       const session = await prisma.sessionToken.findUnique({
@@ -73,6 +74,7 @@ export async function GET(request: Request) {
       }
     }
 
+    // Fetch a typed projection
     const questions = await prisma.question.findMany({
       where,
       take: amount,
@@ -80,7 +82,7 @@ export async function GET(request: Request) {
       select: {
         id: true,
         categoryName: true,
-        type: true,            // Prisma returns strings compatible with our unions
+        type: true,
         difficulty: true,
         question: true,
         correctAnswer: true,
@@ -88,14 +90,19 @@ export async function GET(request: Request) {
       },
     })
 
-    const results: TriviaQuestion[] = questions.map((q) => ({
-      category: q.categoryName,
-      type: q.type as QuestionType,
-      difficulty: q.difficulty as Difficulty,
-      question: q.question,
-      correct_answer: q.correctAnswer,
-      incorrect_answers: q.type === 'boolean' ? [] : q.incorrectAnswers,
-    }))
+    // 👉 Give q an explicit type so it's not 'any'
+    type QuestionRow = (typeof questions)[number]
+
+    const results: TriviaQuestion[] = questions.map(
+      (q: QuestionRow): TriviaQuestion => ({
+        category: q.categoryName,
+        type: q.type as QuestionType,
+        difficulty: q.difficulty as Difficulty,
+        question: q.question,
+        correct_answer: q.correctAnswer,
+        incorrect_answers: q.type === 'boolean' ? [] : q.incorrectAnswers,
+      }),
+    )
 
     if (token && questions.length > 0) {
       const newIds = questions.map((q) => q.id)
@@ -127,7 +134,7 @@ export async function GET(request: Request) {
       results,
     })
   } catch (err) {
-    console.error('Trivia API error:', err)
+    console.error('API error:', err)
     return NextResponse.json(
       { response_code: RC.INVALID_PARAM, error: 'Invalid request' },
       { status: 400 },
