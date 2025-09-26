@@ -127,8 +127,7 @@ export async function GET(request: Request) {
       results,
     })
   } catch (error) {
-    // if you want to keep lint happy here too:
-    // if (error instanceof Prisma.PrismaClientKnownRequestError) { ... }
+    console.error('API error:', error)
     return NextResponse.json(
       { response_code: RC.INVALID_PARAM, error: 'Invalid request' },
       { status: 400 },
