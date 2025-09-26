@@ -1,0 +1,59 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+
+enum QuestionType {
+  multiple
+  boolean
+}
+
+enum Difficulty {
+  easy
+  medium
+  hard
+}
+
+model Category {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  name      String   @unique                 // e.g., "Mythology"
+  slug      String   @unique                 // e.g., "mythology"
+  extId     Int?                              // numeric code if you want OpenTDB-style categories
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Question {
+  id               String        @id @default(auto()) @map("_id") @db.ObjectId
+  type             QuestionType
+  difficulty       Difficulty
+  categoryId       String        @db.ObjectId
+  categoryName     String
+  question         String
+  correctAnswer    String
+  incorrectAnswers String[]
+  tags             String[]      @default([])
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([categoryId])
+  @@index([categoryName])
+  @@index([difficulty, type])
+}
+
+model SessionToken {
+  id         String   @id @map("_id")                // token string is the primary key
+  servedIds  String[] @db.ObjectId                   // already served question ids
+  updatedAt  DateTime @updatedAt
+  expiresAt  DateTime
+
+  // For auto cleanup in Mongo, create a TTL index manually:
+  // db.SessionToken.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 })
+
+  @@index([expiresAt])
+}
